@@ -1,4 +1,3 @@
-"""MLP commun aux quatre fonctions de coût."""
 import torch
 from torch import nn
 
