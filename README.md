@@ -1,22 +1,75 @@
-# Robust MLP — comparaison des fonctions de coût
+# Robust MLP Regression: MSE vs. Huber vs. Tukey
 
-Petit projet personnel en PyTorch pour étudier la sensibilité d'un réseau MLP aux valeurs aberrantes dans une tâche de régression.
+**How robust loss functions affect neural-network regression under outlier contamination**
 
-## Objectif
+In this personal project, I investigate how outliers in training labels affect a multilayer perceptron (MLP). I implemented the experiments in **PyTorch** and compared standard mean squared error (MSE) with two robust alternatives: **Huber** and **Tukey's biweight**.
 
-Je compare cinq entraînements avec **la même architecture et la même initialisation** :
+I wanted to answer two questions: how much does each loss protect prediction accuracy as contamination increases, and does robustness come at the cost of harder optimization?
 
-- `mse` : erreur quadratique ;
-- `huber` : perte de Huber ;
-- `huber_warmup` : MSE pendant 20 époques, puis Huber ;
-- `tukey` : fonction biweight de Tukey ;
-- `tukey_warmup` : MSE pendant 20 époques, puis Tukey.
+## Experimental setup
 
-L'idée est de vérifier non seulement la résistance à la contamination, mais aussi la stabilité de l'optimisation. Le warmup est une **hypothèse expérimentale**, pas une garantie d'amélioration.
+I generate noisy observations from a nonlinear function:
+
+```text
+f(x) = sin(2πx) + 0.5x²
+```
+
+Only **training labels** are contaminated, at rates of **0%, 5%, 10%, 20%, 30%, and 40%**. Validation and test sets remain clean, so the reported scores measure recovery of the underlying relationship rather than performance on corrupted targets.
+
+I compare five training strategies:
+
+| Strategy | Training loss |
+| --- | --- |
+| MSE | Mean squared error throughout |
+| Huber | Huber loss throughout |
+| Huber + warmup | MSE for 20 epochs, then Huber |
+| Tukey | Tukey's biweight throughout |
+| Tukey + warmup | MSE for 20 epochs, then Tukey |
+
+All five strategies use the **same four-hidden-layer MLP** (64 ReLU units per layer), Adam optimizer, and matched initial weights and datasets within each random seed. Training runs for up to **180 epochs**, with early stopping (patience 45; at least 70 epochs). I select checkpoints using clean validation RMSE and evaluate them on a separate clean test set.
+
+I repeat the experiment for **three seeds (42, 43, 44)** and report test **RMSE, MAE, and R²**. Three seeds provide a useful initial comparison, but not strong statistical evidence.
+
+> **Simulation-specific assumption:** target scaling uses clean training labels *before* contamination. This gives the experiment access to information that would generally be unavailable in real-world datasets. Clean validation data is another favorable experimental assumption.
+
+## Results
+
+The table below shows **mean test RMSE across three seeds** (lower is better).
+
+| Contamination | MSE | Huber | Huber + warmup | Tukey | Tukey + warmup |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0% | 0.1606 | **0.1592** | 0.1634 | 0.1625 | 0.1631 |
+| 5% | 0.2506 | 0.1658 | 0.1708 | **0.1614** | 0.1621 |
+| 10% | 0.2700 | 0.1682 | 0.1749 | **0.1619** | 0.1624 |
+| 20% | 0.3422 | 0.1862 | 0.1998 | **0.1580** | 0.1600 |
+| 30% | 0.4100 | 0.2065 | 0.2163 | **0.1652** | 0.1743 |
+| 40% | 0.4343 | 0.2189 | 0.2477 | **0.1637** | 0.1872 |
+
+### Robustness as contamination increases
+
+![Mean test RMSE across contamination levels](outputs/01_robustesse.png)
+
+In my experiments, **MSE deteriorates sharply** as the proportion of corrupted labels increases. Huber is substantially more stable, while **Tukey gives the lowest mean RMSE at every nonzero contamination level**. At 40% contamination, Tukey reaches **0.1637**, compared with **0.4343** for MSE.
+
+### Training dynamics
+
+![Training convergence comparison](outputs/02_convergence.png)
+
+I also looked at convergence because a robust objective is not automatically easy to optimize. Tukey's loss is non-convex, and large residuals can contribute little or no gradient. This makes initialization and training behavior important when interpreting the final scores.
+
+### Predictions
+
+![Model predictions at the highest contamination level](outputs/03_predictions.png)
+
+The prediction plot provides a qualitative check alongside the numerical metrics. It helps show how well each fitted model follows the underlying nonlinear trend when training labels are heavily corrupted.
+
+### What surprised me
+
+I expected an initial MSE warmup to make robust-loss training more reliable. In these runs, however, **warmup did not improve the average RMSE**: the direct Huber and Tukey variants generally performed better than their warmup counterparts. That result is specific to this setup; it does not mean warmup is never useful.
 
 ## Installation
 
-Python 3.10+ recommandé.
+Python 3.10+ is recommended.
 
 ```bash
 python3 -m venv .venv
@@ -24,68 +77,42 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Sous Windows : `.venv\\Scripts\\activate`.
+On Windows, activate the environment with `.venv\Scripts\activate`.
 
-## Exécution
+## Running the experiments
 
 ```bash
-python run_experiment.py --quick   # vérification rapide, résultats non interprétables
-python run_experiment.py           # expérience complète
-python -m pytest -q               # tests
+python run_experiment.py --quick  # Smoke test; not for interpreting results
+python run_experiment.py          # Full experiment
+python -m pytest -q               # Tests
 ```
 
-Les réglages sont dans `configs/default.yaml`. Le projet fonctionne sur CPU, CUDA ou MPS (Mac Apple Silicon). Le temps d'exécution dépend de la machine.
+Settings are defined in `configs/default.yaml`. The code supports CPU, CUDA, and Apple Silicon MPS when available.
 
-## Protocole
+The full run generates figures and detailed CSV results locally in `outputs/`. **Only the three PNG figures are tracked in this repository**; generated CSV files and the run-specific output configuration are intentionally excluded from Git.
 
-1. On génère un signal non linéaire : `sin(2πx) + 0.5x²` avec un bruit gaussien.
-2. On crée des ensembles train, validation et test distincts. Seules les **sorties du train** sont contaminées (0 à 40 %).
-3. Pour une seed donnée, tous les modèles partagent exactement les mêmes données et les mêmes poids initiaux.
-4. L'architecture par défaut comporte **4 couches cachées de 64 neurones ReLU**. Elle est volontairement plus simple que l'ancienne version à 10 couches.
-5. L'entraînement utilise Adam, jusqu'à 180 époques, avec patience 45 et au moins 70 époques. Le meilleur checkpoint est choisi sur la **RMSE de validation propre**.
-6. Les métriques finales (RMSE, MAE, R²) sont calculées sur le **test propre**, jamais utilisé pour entraîner ou sélectionner les modèles.
-7. On répète l'expérience avec **3 seeds** (42, 43 et 44) : compromis raisonnable pour un projet personnel. Ce n'est pas suffisant pour une preuve statistique forte.
-
-**Important :** pour isoler l'effet de la contamination dans ce jeu synthétique, la normalisation des sorties utilise les valeurs du train *avant* contamination. C'est une information oracle disponible uniquement dans cette simulation. Pour des données réelles, il faudra utiliser une estimation robuste de l'échelle sans connaître les sorties propres.
-
-## Résultats : seulement trois figures
+## Repository structure
 
 ```text
-outputs/
-  config_used.yaml        # configuration exacte de l'expérience
-  metrics.csv             # une ligne par entraînement
-  summary.csv             # moyennes et écarts-types par modèle / contamination
-  01_robustesse.png       # RMSE moyenne ± écart-type
-  02_convergence.png      # validation, seed 42, contamination maximale
-  03_predictions.png      # prédictions, seed 42, contamination maximale
+configs/default.yaml    Experiment settings
+src/data.py             Synthetic data and label contamination
+src/models.py           MLP architecture
+src/losses.py           MSE, Huber, and Tukey losses
+src/train.py            Training and checkpoint selection
+src/plots.py            Visualization
+run_experiment.py       Experiment entry point
+tests/test_project.py   Basic tests
+outputs/*.png           Published experimental figures
 ```
 
-Le champ `best_epoch` désigne l'époque du **meilleur checkpoint**, pas forcément l'époque d'arrêt. `collapsed` est un simple signalement : écart-type des prédictions inférieur à 10 % de celui des sorties test. Ce critère est descriptif et ne démontre pas, à lui seul, un échec d'optimisation.
+## Limitations and next steps
 
-Les fichiers de sortie sont ignorés par Git. Le script remplace uniquement les six fichiers qu'il génère dans `outputs/`, sans supprimer d'autres fichiers.
+This is a **controlled synthetic experiment**, not a claim that Tukey will outperform other losses on every dataset. In particular:
 
-## Points à garder en tête
+- Both checkpoint selection and final evaluation use clean labels.
+- Target scaling relies on clean pre-contamination training labels.
+- Three random seeds are not enough to establish statistical significance.
+- Tukey's non-convex objective can be sensitive to initialization and its tuning constant.
+- Training uses **backpropagation with Adam**, not iteratively reweighted least squares (IRLS).
 
-- La perte de Tukey est non convexe : elle peut rester bloquée selon l'initialisation.
-- La fonction de Huber n'est pas censée être systématiquement meilleure que la MSE sur chaque réalisation.
-- Le warmup peut stabiliser l'apprentissage, mais cela doit être vérifié sur plusieurs seeds.
-- Les performances sont évaluées sur un test propre ; elles ne mesurent pas la qualité des prédictions sur un test contaminé.
-- La sélection sur validation propre est un choix expérimental favorable : en situation réelle, un ensemble de validation parfaitement propre n'est pas toujours disponible.
-- L'entraînement est réalisé par rétropropagation avec Adam, **pas par IRLS**.
-
-## Organisation
-
-```text
-configs/default.yaml   paramètres
-src/data.py            génération et contamination
-src/models.py          architecture MLP
-src/losses.py          MSE, Huber et Tukey
-src/train.py           entraînement et sélection
-src/plots.py           trois graphiques
-run_experiment.py      lancement des expériences
-tests/test_project.py  tests de base
-```
-
-## Pistes pour la suite
-
-Comparer plusieurs valeurs de `huber_delta` et `tukey_c`, tester une contamination asymétrique et ajouter des données réelles. Pour une étude plus approfondie, augmenter le nombre de seeds et quantifier les cas de prédictions quasi constantes.
+Next, I would like to tune the Huber and Tukey thresholds, test asymmetric and feature-dependent contamination, run more seeds, and evaluate the approach on a real regression dataset.
