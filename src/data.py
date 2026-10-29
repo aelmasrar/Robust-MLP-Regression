@@ -1,4 +1,3 @@
-"""Jeu de données synthétique et contamination uniquement du train."""
 import numpy as np
 
 def signal(x):
