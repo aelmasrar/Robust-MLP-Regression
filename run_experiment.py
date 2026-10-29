@@ -1,4 +1,3 @@
-"""Lancer : python run_experiment.py [--quick] [--config configs/default.yaml]."""
 import argparse
 import copy
 import random
@@ -31,7 +30,6 @@ def main():
         raise ValueError('Taux de contamination invalide')
     out = Path(cfg['output_dir'])
     out.mkdir(parents=True, exist_ok=True)
-    # Nettoyer seulement les fichiers produits par le script, pour éviter les anciennes figures.
     for filename in ('metrics.csv', 'summary.csv', '01_robustesse.png',
                      '02_convergence.png', '03_predictions.png', 'config_used.yaml'):
         (out / filename).unlink(missing_ok=True)
@@ -53,8 +51,7 @@ def main():
         (xt, yt), (xv, yv), (xe, ye) = make_data(
             seed, cfg['n_train'], cfg['n_val'], cfg['n_test'], cfg['noise_std'])
         xt, xv, xe = [v.astype(np.float32) for v in normalize(xt, xv, xe)]
-        # Échelle oracle issue du train propre : choix contrôlé propre aux données synthétiques.
-        # Ne pas réutiliser tel quel sur des données réelles dont les labels propres sont inconnus.
+        # Target scaling uses clean labels available only in this synthetic experiment.
         y_mean, y_std = float(yt.mean()), max(float(yt.std()), 1e-8)
         yv_scaled = ((yv - y_mean) / y_std).astype(np.float32)
         torch.manual_seed(seed)
@@ -67,7 +64,6 @@ def main():
                 model, history, best_epoch = fit(name, xt, yc_scaled, xv, yv_scaled,
                                                  cfg, seed, device, initial)
                 pred = predict(model, xe, device) * y_std + y_mean
-                # Détecteur descriptif, pas une preuve d'échec : amplitude des prédictions.
                 collapsed = bool(float(np.std(pred)) < 0.10 * float(np.std(ye)))
                 row = dict(seed=seed, contamination=float(p), model=name,
                            rmse=float(np.sqrt(mean_squared_error(ye, pred))),
