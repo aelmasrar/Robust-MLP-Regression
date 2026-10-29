@@ -1,4 +1,3 @@
-"""Entraînement contrôlé : initialisation commune, validation propre et patience."""
 import copy
 import numpy as np
 import torch
@@ -38,7 +37,6 @@ def fit(name, x_train, y_train, x_val, y_val, cfg, seed, device, initial_state):
             best, best_epoch, best_state, stale = val_rmse, epoch + 1, copy.deepcopy(model.state_dict()), 0
         else:
             stale += 1
-        # Pas d'arrêt avant min_epochs, ni pendant le warmup.
         if epoch + 1 >= max(cfg['min_epochs'], cfg['warmup_epochs'] + 1) and stale >= cfg['patience']:
             break
     model.load_state_dict(best_state)
