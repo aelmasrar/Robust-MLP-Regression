@@ -1,4 +1,3 @@
-"""Trois figures seulement : robustesse, convergence, prédictions."""
 from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
