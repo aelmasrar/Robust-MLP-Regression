@@ -1,4 +1,3 @@
-"""Fonctions de coût sur des résidus standardisés."""
 import torch
 import torch.nn.functional as F
 
@@ -8,7 +7,7 @@ def tukey_loss(pred, target, c=4.685):
         raise ValueError('c doit être > 0')
     r = pred - target
     z2 = (r / c).square()
-    # clamp garantit une saturation exacte et un gradient nul au-delà de c.
+    # Residuals beyond c have zero gradient.
     return ((c * c / 6) * (1 - (1 - z2).clamp(min=0).pow(3))).mean()
 
 
